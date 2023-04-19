@@ -15,18 +15,17 @@ TT <- 100
 n <- S * TT
 
 # Spatial
-sigma <- 1
-l <- 2.3 
+sigma <- 2
+l <- 1
 
 # Temporal
 rho <- 0.6
-prec_t <- 4
-prec_e <- 10
+sigma_e <- 1
 
 # Intercept
 alpha <- 1
 
-set.seed(1239)
+set.seed(1233)
 coords <- cbind(runif(S), runif(S))
 
 ord <- order(coords[,1])
@@ -36,12 +35,13 @@ d <- dist(coords) |>
   as.matrix()
 w_s <- mvtnorm::rmvnorm(1, sigma = sigma^2 * exp(-d / (2 * l^2))) |>
   c()
-err <- rnorm(TT, 0, 1 / sqrt(prec_t))
 
 w_mat <- matrix(nrow = TT, ncol = S)
 w_mat[1,] <- w_s
 for (t in 2:TT) {
-  w_mat[t,] <- rho * w_mat[t - 1,] + err[t]
+  w_s <- mvtnorm::rmvnorm(1, sigma = sigma^2 * exp(-d / (2 * l^2))) |>
+    c()
+  w_mat[t,] <- rho * w_mat[t - 1,] + sqrt(1 - rho^2) * w_s
 }
 
 # Reshape matrix to vector
@@ -49,7 +49,7 @@ w <- as.vector(w_mat)
 
 mu <- alpha + w
 
-y2 <- rnorm(n, mu, 1 / sqrt(prec_e))
+y2 <- rnorm(n, mu, sigma_e)
 plot(1:TT, w_mat[, 1], "l")
 hist(y2)
 
@@ -75,21 +75,23 @@ result_stan <- sampling(
   model,
   data = data_stan,
   chains = 4,
-  iter = 6000)
+  iter = 1500)
 
 result_stan |>
-  mcmc_trace(pars = c("alpha", "ar", "sigma", "l", "sigma_t", "tau")) +
+  mcmc_trace(pars = c("alpha", "ar", "sigma", "l", "tau")) +
   scale_color_discrete()
 
 result_stan |>
-  mcmc_dens_overlay(pars = c("alpha", "ar", "sigma", "l", "sigma_t", "tau")) +
+  mcmc_dens_overlay(pars = c("alpha", "ar", "sigma", "l", "tau")) +
   scale_color_discrete()
+
+result_stan |>
+  mcmc_pairs(pars = c("alpha", "ar", "sigma", "l", "tau"))
 
 stan2_df <- as_draws_df(result_stan)
 stan2_summary <- stan2_df |>
-  select_at(vars("alpha", "ar", "sigma", "l", "sigma_t", "tau")) |>
+  select_at(vars("alpha", "ar", "sigma", "l", "tau")) |>
   summarise_draws()
-
 stan2_summary
 
 # Posterior predictive distribution
