@@ -15,17 +15,16 @@ TT <- 100
 n <- S * TT
 
 # Spatial
-sigma <- 1
-l <- 2.3 
+sigma <- .5
+l <- 2
 
 # Temporal
 rho <- 0.6
-prec_t <- 4
 
 # Intercept
-alpha <- 1
+alpha <- 3
 
-set.seed(1239)
+set.seed(1233)
 coords <- cbind(runif(S), runif(S))
 
 ord <- order(coords[,1])
@@ -35,12 +34,13 @@ d <- dist(coords) |>
   as.matrix()
 w_s <- mvtnorm::rmvnorm(1, sigma = sigma^2 * exp(-d / (2 * l^2))) |>
   c()
-err <- rnorm(TT, 0, 1 / sqrt(prec_t))
 
 w_mat <- matrix(nrow = TT, ncol = S)
 w_mat[1,] <- w_s
 for (t in 2:TT) {
-  w_mat[t,] <- rho * w_mat[t - 1,] + err[t]
+  w_s <- mvtnorm::rmvnorm(1, sigma = sigma^2 * exp(-d / (2 * l^2))) |>
+    c()
+  w_mat[t,] <- rho * w_mat[t - 1,] + sqrt(1 - rho^2) * w_s
 }
 
 # Reshape matrix to vector
@@ -53,41 +53,44 @@ plot(1:TT, w_mat[, 1], "l")
 hist(y2)
 
 # -----------------------------------------------------------------------------
+m <- 5
+
+nn <- NNMatrix(coords, n.neighbors = m)
+
 data_stan <- list(
   S = S,
   T = TT,
   N = n,
-  y = y2,
-  x1 = coords[,1],
-  x2 = coords[,2]
+  Y = y2,
+  M = m,
+  NN_ind = nn$NN_ind,
+  NN_dist = nn$NN_dist,
+  NN_distM = nn$NN_distM
 )
 
-model <- stan_model("./stan/poi_gp_ar1.stan")
+model <- stan_model("./stan/poi_nngp_ar1.stan")
 
 result_stan <- sampling(
   model,
   data = data_stan,
   chains = 4,
-  iter = 6000)
-
-nuts <- nuts_params(result_stan)
+  iter = 2000)
 
 result_stan |>
-  mcmc_trace(pars = c("beta", "rho", "alpha","length_scale", "sigma")) +
+  mcmc_trace(pars = c("alpha", "ar", "sigma", "l")) +
   scale_color_discrete()
 
 result_stan |>
-  mcmc_dens_overlay(pars = c("beta", "rho", "alpha","length_scale", "sigma")) +
+  mcmc_dens_overlay(pars = c("alpha", "ar", "sigma", "l")) +
   scale_color_discrete()
 
 result_stan |>
-  mcmc_pairs(pars = c("beta", "rho", "alpha","length_scale", "sigma"), np = nuts)
+  mcmc_pairs(pars = c("alpha", "ar", "sigma", "l"))
 
 stan2_df <- as_draws_df(result_stan)
 stan2_summary <- stan2_df |>
-  select_at(vars("beta", "rho", "alpha","length_scale", "sigma")) |>
+  select_at(vars("alpha", "ar", "sigma", "l")) |>
   summarise_draws()
-
 stan2_summary
 
 # Posterior predictive distribution
