@@ -1,142 +1,138 @@
 library(dplyr)
 library(tidyr)
-library(bmstdr)
 library(rstan)
 library(posterior)
 library(bayesplot)
 
+source("./R/NNMatrix.R")
+
 options(mc.cores = parallel::detectCores())
 rstan_options(auto_write = TRUE)
 
-# f2 <- y8hrmax~xmaxtemp+xwdsp+xrh
-# M2 <- Bsptime(
-#   model="separable", formula=f2, data=nysptime, coordtype="utm", coords=4:5, 
-#   package = "stan", N = 1, burn.in = 0)
-# get_stanmodel(M2$fit)
-
 # simulate data
-S <- 5
+S <- 20
 TT <- 100
 n <- S * TT
 
 # Spatial
 sigma <- 1
-l <- 2.3
+l <- .6
 
 # Temporal
 rho <- 0.8
 prec <- 10
-prec.par <- 2
 
 # Intercept
 alpha <- 1
 
-# w_s | theta ~ GP(0, C)
-# u_t | theta ~ AR(1)
-# eta_{s, t} = alpha + w_s + u_t
-# y_{s, t} | eta ~ Gamma(shape, scale)
 set.seed(1239)
 coords <- cbind(runif(S), runif(S))
 
 ord <- order(coords[,1])
 coords <- coords[ord,]
-
 d <- dist(coords) |>
   as.matrix()
-w <- mvtnorm::rmvnorm(1, sigma = sigma^2 * exp(-d / l^2)) |>
+C <- sigma^2 * exp(-d / l^2)
+
+plot(d[lower.tri(C)], C[lower.tri(C)])
+
+w_s <- mvtnorm::rmvnorm(1, sigma = C) |>
   c()
 
-u <- as.vector(arima.sim(list(order = c(1, 0, 0), ar = rho), n = TT, sd = sqrt(1 / prec)))
+w_mat <- matrix(nrow = TT, ncol = S)
+w_mat[1,] <- w_s
+for (t in 2:TT) {
+  w_s <- mvtnorm::rmvnorm(1, sigma = C) |>
+    c()
+  w_mat[t,] <- rho * w_mat[t - 1,] + sqrt(1 - rho^2) * w_s
+}
+w <- as.vector(w_mat)
 
-# mu <- exp(alpha + rep(w, each = TT) + rep(u, times = S))
-mu <- exp(alpha + rep(w, each = TT) + rep(u, times = S))
+mu <- exp(alpha + w)
 
-# a <- mu^2 / prec.par
-# b <- mu / prec.par
-
-a <- prec.par
-b <- prec.par / mu
+a <- prec
+b <- prec / mu
 
 y2 <- rgamma(n, shape = a, rate = b)
+plot(1:TT, w_mat[, 1], "l")
+hist(y2)
 
-# -----------------------------------------------------------------------
-# INLA sim 2
-# -----------------------------------------------------------------------
-data_inla <- tibble(
-  y = y2, 
-  loc = rep(1:S, each = TT), 
-  t = rep(1:TT, times = S), 
+df <- tibble(
+  s = rep(1:S, each = TT),
+  t = rep(1:TT, S),
+  c1 = rep(coords[,1], each = TT),
+  c2 = rep(coords[,2], each = TT),
+  y = y2,
+  w = w
 )
 
-result_inla <- inla(
-  y ~ 1 + f(loc, model = "dmatern", locations = coords) + 
-    f(t, model = "ar1", hyper = list(prec = list(param = c(10, 100)))),
-  data = data_inla, family = "gamma", control.compute = list(config = T)
-)
+# -----------------------------------------------------------------------------
+m <- 3
 
-summary(result_inla)
+nn <- NNMatrix(coords, n.neighbors = m)
 
-bri.hyperpar.plot(result_inla, together = F)
-bri.fixed.plot(result_inla, together = F)
-
-# Posterior predictive distribution
-sim <- inla.posterior.sample(100, result_inla)
-
-pp_df <- tibble()
-for (i in 1:length(sim)) {
-  df_i <- tibble(
-    draw = i,
-    y = exp(sim[[i]]$latent[,1])
-  )
-  pp_df <- pp_df |>
-    bind_rows(df_i)
-}
-
-ggplot(pp_df, aes(x = y, group = draw)) +
-  geom_density(col = "grey60") +
-  geom_density(data = data_inla, aes(x = y, group = 1)) +
-  xlim(0, 10)
-
-# -----------------------------------------------------------------------
-# Stan
-# ------------------------------------------------------------------------
-data_stan2 <- list(T = length(y2), Y = y2)
+data_stan <- list(
+  S = S,
+  T = TT,
+  N = n,
+  Y = y2,
+  M = m,
+  NN_ind = nn$NN_ind,
+  NN_dist = nn$NN_dist,
+  NN_distM = nn$NN_distM)
 
 model <- stan_model("./stan/gamma_nngp_ar1.stan")
 
-result_stan2 <- sampling(
+result_stan <- sampling(
   model,
-  data = data_stan2,
+  data = data_stan,
   chains = 4,
-  iter = 3000)
+  iter = 1500)
+np <- nuts_params(result_stan)
 
-result_stan2 |>
-  mcmc_dens_overlay(pars = c("alpha", "rho", "sigma_ar", "inverse_phi")) +
+result_stan |>
+  mcmc_trace(
+    pars = c("alpha", "ar", "sigma", "l", "inverse_phi"), np = np) +
   scale_color_discrete()
 
-stan2_df <- as_draws_df(result_stan2)
+result_stan |>
+  mcmc_dens_overlay(pars = c("alpha", "ar", "sigma", "l", "inverse_phi")) +
+  scale_color_discrete()
+
+result_stan |>
+  mcmc_pairs(
+    pars = c("alpha", "ar", "sigma", "l", "inverse_phi"), off_diag_fun = "hex", np = np)
+
+stan2_df <- as_draws_df(result_stan)
 stan2_summary <- stan2_df |>
-  select_at(vars("alpha", "rho", "sigma_ar", "inverse_phi", starts_with("u"))) |>
+  select_at(vars("alpha", "ar", "sigma", "l", "inverse_phi")) |>
   summarise_draws()
-
 stan2_summary
-
-stan2_summary |>
-  filter(stringr::str_detect(variable, "^u")) |>
-  ggplot(aes(x = median)) +
-  geom_density()
-
-stan2_summary |>
-  filter(stringr::str_detect(variable, "^u")) |>
-  ggplot(aes(x = 1:100, y = median)) +
-  geom_line()
 
 # Posterior predictive distribution
 y_tilde <- stan2_df |>
   slice_sample(n = 100, replace = F) |>
   select_at(vars(starts_with("y_tilde"), ".draw")) |>
   pivot_longer(!".draw")
-
 ggplot(y_tilde, aes(x = value, group = .draw)) +
   geom_density(col = "grey60") +
   geom_density(data = data.frame(y = y2), aes(x = y, group = 1))
+
+w_df <- stan2_df |>
+  select(starts_with("err")) |>
+  summarise_draws() |>
+  mutate(
+    s = rep(1:S, each = TT),
+    t = rep(1:TT, S),
+  )
+
+w_df <- w_df |>
+  left_join(df, by = c("t", "s")) |>
+  mutate(
+    resid = median - w,
+    resid_std = resid / sd(resid)
+  )
+
+w_df |>
+  ggplot(mapping = aes(x = 1:nrow(w_df), y = resid_std)) +
+  geom_point()

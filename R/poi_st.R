@@ -15,8 +15,8 @@ TT <- 100
 n <- S * TT
 
 # Spatial
-sigma <- .5
-l <- 2
+sigma <- 2
+l <- 1
 
 # Temporal
 rho <- 0.6
@@ -32,18 +32,20 @@ coords <- coords[ord,]
 
 d <- dist(coords) |>
   as.matrix()
-w_s <- mvtnorm::rmvnorm(1, sigma = sigma^2 * exp(-d / (2 * l^2))) |>
+C <- sigma^2 * exp(-d / (2 * l^2))
+
+plot(d[lower.tri(C)], C[lower.tri(C)])
+
+w_s <- mvtnorm::rmvnorm(1, sigma = C) |>
   c()
 
 w_mat <- matrix(nrow = TT, ncol = S)
 w_mat[1,] <- w_s
 for (t in 2:TT) {
-  w_s <- mvtnorm::rmvnorm(1, sigma = sigma^2 * exp(-d / (2 * l^2))) |>
+  w_s <- mvtnorm::rmvnorm(1, sigma = C) |>
     c()
   w_mat[t,] <- rho * w_mat[t - 1,] + sqrt(1 - rho^2) * w_s
 }
-
-# Reshape matrix to vector
 w <- as.vector(w_mat)
 
 mu <- exp(alpha + w)
@@ -74,7 +76,7 @@ result_stan <- sampling(
   model,
   data = data_stan,
   chains = 4,
-  iter = 2000)
+  iter = 1000)
 
 result_stan |>
   mcmc_trace(pars = c("alpha", "ar", "sigma", "l")) +
