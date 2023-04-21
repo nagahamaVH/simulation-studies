@@ -21,7 +21,7 @@ data {
 
 parameters {
   real alpha; // Intercept
-  real<lower = 1e-6> tau; // Nugget parameter
+  real<lower = 1e-6> sigma_e; // Nugget parameter
   real<lower = 1e-6> sigma; // Spatial covariance
   real<lower = 1e-6> l; // Spatial covariance
   real<lower = -1, upper = 1> ar; // Temporal effect - AR(1)
@@ -43,17 +43,18 @@ transformed parameters {
 }
 
 model {
-  l ~ inv_gamma(2, 1);
-  sigma ~ inv_gamma(2, 1);
+  l ~ cauchy(0, 2.5);
+  sigma ~ cauchy(1, 2.5);
   alpha ~ normal(0, 1);
-  tau ~ inv_gamma(2, 1);
+  sigma_e ~ inv_gamma(2, 1);
   ar ~ normal(0, .5);
-  
+
   for (t in 1:T) {
-    sum(err[t]) ~ normal(0, 0.001 * S);
+    // sum(err[t]) ~ normal(0, 0.001 * S);
     err[t] ~ nngp_w(sigmasq, lsq, NN_dist, NN_distM, NN_ind, S, M);
-    Y[t] ~ normal(mu[t, ], tau);
   }
+  
+  Y ~ normal(to_vector(mu), sigma_e);
 }
 
 generated quantities {
@@ -61,7 +62,7 @@ generated quantities {
 
   for (s in 1:S) {
     for (t in 1:T) {
-      y_tilde[t + (s - 1) * T] = normal_rng(mu[t, s], tau);
+      y_tilde[t + (s - 1) * T] = normal_rng(mu[t, s], sigma_e);
     }
   }
 }
