@@ -87,7 +87,7 @@ data <- list(
   coords = coords
 )
 
-model_file <- "./stan/nngp_ar1errors.stan"
+model_file <- "./stan/nngp_ar1obs.stan"
 
 model <- cmdstan_model(model_file, compile = F)
 model$compile(cpp_options = list(stan_threads = TRUE), include_paths = "./stan",
