@@ -16,10 +16,10 @@ data {
 
 parameters {
   vector[p] beta;
-  real<lower = 1e-6> tau;
-  real<lower = 1e-6> sigma;
+  real<lower = 0> tau;
+  real<lower = 0> sigma;
   real<lower = 1e-6> l;
-  real<lower = -1, upper = 1> rho;
+  real rho;
 }
 
 transformed parameters {
@@ -27,7 +27,6 @@ transformed parameters {
   
   mu[1] = X_t[1] * beta;
   for (t in 2:T) {
-    // mu[t] = X_t[t] * beta + rho * Y_t[t - 1];
     mu[t] = X_t[t] * beta + rho * (Y_t[t - 1] - X_t[t - 1] * beta);
   }
 }
@@ -36,14 +35,12 @@ model {
   real sigmasq = square(sigma);
   real tausq = square(tau);
   
-  l ~ inv_gamma(5, 5);
-  sigma ~ inv_gamma(2, 1);
-  beta ~ std_normal();
-  tau ~ inv_gamma(2, 1);
-  rho ~ normal(0.5, 1);
+  l ~ inv_gamma(2, 1);
+  sigma ~ normal(0, 10);
+  beta ~ normal(0, 10);
+  tau ~ normal(0, 10);
+  rho ~ uniform(-1, 1);
 
-  target += nngp_resp_lpdf(Y_t[1] | mu[1], sigmasq / (1 - rho^2), l, 
-    tausq / (1 - rho^2), NN_dist, NN_distM, NN_ind, S, M);
   for (t in 2:T){
     target += nngp_resp_lpdf(Y_t[t] | mu[t], sigmasq, l, tausq, NN_dist, 
       NN_distM, NN_ind, S, M);
@@ -59,9 +56,8 @@ generated quantities {
 
     cov = gp_exponential_cov(coords, coords, sigma, l);
     cov = add_diag(cov, tau^2);
-    y_sim_t[1] = multi_normal_rng(mu[1], cov / (1 - rho^2));
-    for (t in 2:T) {
-      y_sim_t[t] = multi_normal_rng(mu[t], cov);
+    for (t in 1:T) {
+      y_sim_t[t] = multi_normal_cholesky_rng(mu[t], cholesky_decompose(cov));
     }
     
     for (s in 1:S) {
