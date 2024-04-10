@@ -6,7 +6,7 @@ library(ggplot2)
 library(ggforce)
 
 source("./R/nearest_neighbor_functions.R")
-source("./R/nngp_ar1obs_pred.R")
+source("./R/nngp_ar1obs_varslopes_pred.R")
 
 set.seed(1521)
 
@@ -81,13 +81,12 @@ ggplot(filter(df, s %in% sampled_stations), aes(x = t, y = y)) +
 test_station <- sample(1:S, 10)
 test_time <- 3
 
-train <- filter(df, !(s %in% test_station) & (t <= max(t) - test_time))
+train <- filter(df, !(s %in% test_station) & (t <= (max(t) - test_time)))
 # test <- filter(df, s %in% test_station) |>
 #   rbind(filter(df, t > max(t) - test_time & !(s %in% test_station)))
 
-test <- filter(df, s %in% test_station) |>
-  filter(t > max(t) - test_time)
-
+# test <- filter(df, (t > (max(t) - test_time)) & !(s %in% test_station))
+test <- filter(df, s %in% test_station)
 # -----------------------------------------------------------------------------
 m <- 3
 
@@ -191,6 +190,7 @@ post_sigma <- fit$draws(variables = "sigma", format = "matrix")
 post_l <- fit$draws(variables = "l", format = "matrix")
 post_tau <- fit$draws(variables = "tau", format = "matrix")
 post_beta <- fit$draws(variables = "beta", format = "matrix")
+post_beta_s <- fit$draws(variables = "beta_s", format = "matrix")
 post_rho <- fit$draws(variables = "rho", format = "matrix")
 
 coords_pred <- as.matrix(test[, c("c1", "c2")])
@@ -208,8 +208,8 @@ time_pred <- test$t
 y_obs <- matrix(train$y, nrow = max(train$t)) # dim = S x TT
 mu_obs <- matrix(fit_summary$pred, nrow = max(fit_summary$t))
 
-pp_pred <- pred_st(X_pred, coords_pred, time_pred, y_obs, mu_obs, 
-                   coords_train, post_beta, post_rho, post_sigma, post_l, 
+pp_pred <- pred_st(X_pred, coords_pred, time_pred, y_obs, mu_obs, coords_train, 
+                   post_beta, post_beta_s, post_rho, post_sigma, post_l, 
                    post_tau, "exp")
 pp_pred_summary <- apply(pp_pred, 2, function(x) 
   c(mean(x), quantile(x, probs = c(0.1, 0.9))))
@@ -237,14 +237,7 @@ test_summary |>
   geom_line(aes(y = pred), col = "blue") +
   facet_wrap(~s, scales = "free_y")
 
-test_summary |>
-  ggplot(mapping = aes(x = t, y = y)) +
-  geom_ribbon(aes(ymin = lb, ymax = ub), fill = "blue", alpha = .1) +
-  geom_point() +
-  geom_line(aes(y = pred), col = "blue") +
-  facet_wrap(~s, scales = "free_y")
-
-# For forecast only
+# Forecast only: visualising fitted and forecasted TS
 temp <- test_summary |>
   mutate(type = "test") |>
   bind_rows(fit_summary) |>
@@ -262,5 +255,3 @@ for (i in 1:req_pages) {
                         scales = "free_y")
   print(p)
 }
-
-# For forecast only
