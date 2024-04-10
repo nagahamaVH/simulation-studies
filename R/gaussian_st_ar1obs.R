@@ -82,7 +82,7 @@ ggplot(filter(df, s %in% sampled_stations), aes(x = t, y = y)) +
 test_station <- sample(1:S, 10)
 test_time <- 3
 
-train <- filter(df, !(s %in% test_station) & (t <= max(t) - test_time))
+train <- filter(df, !(s %in% test_station) & (t <= (max(t) - test_time)))
 test <- filter(df, s %in% test_station) |>
   rbind(filter(df, t > max(t) - test_time & !(s %in% test_station)))
 # -----------------------------------------------------------------------------
@@ -229,14 +229,7 @@ test_summary |>
   geom_line(aes(y = pred), col = "blue") +
   facet_wrap(~s, scales = "free_y")
 
-test_summary |>
-  ggplot(mapping = aes(x = t, y = y)) +
-  geom_ribbon(aes(ymin = lb, ymax = ub), fill = "blue", alpha = .1) +
-  geom_point() +
-  geom_line(aes(y = pred), col = "blue") +
-  facet_wrap(~s, scales = "free_y")
-
-# For forecast only
+# Forecast only: visualizing fitted and forecasted TS
 temp <- test_summary |>
   mutate(type = "test") |>
   bind_rows(fit_summary) |>
@@ -254,5 +247,3 @@ for (i in 1:req_pages) {
                         scales = "free_y")
   print(p)
 }
-
-# For forecast only
