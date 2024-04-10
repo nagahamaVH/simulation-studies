@@ -79,15 +79,15 @@ pred_space <- function(X_pred, coords_pred, time_pred, y_obs, mu_obs,
         pred <- pars_t$mu
         y_pred_tm1 <- pred
       }
-      if (max_t_krig > T) {
+      if (time_pred > T) {
         for (t in (T + 1):time_pred) {
           D <- as.matrix(dist(coords_obs))
           L <- chol(sigma^2 * exp(-D / l))
           w <- rnorm(n) %*% L
-          w_pred <- cond_mvn_par(0, w, rep(0, n), sigma, l, tau, coords, 
+          w_pars <- cond_mvn_par(0, w, rep(0, n), sigma, l, tau, coords, 
                                  cov_function)
           pred <- X_pred[t,] %*% beta + 
-            rho * (y_pred_tm1 - X_pred[t - 1,] %*% beta) + w_pred
+            rho * (y_pred_tm1 - X_pred[t - 1,] %*% beta) + w_pars$mu
           y_pred_tm1 <- pred
         }
       }

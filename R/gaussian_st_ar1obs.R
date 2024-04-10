@@ -83,11 +83,8 @@ test_station <- sample(1:S, 10)
 test_time <- 3
 
 train <- filter(df, !(s %in% test_station) & (t <= max(t) - test_time))
-# test <- filter(df, s %in% test_station) |>
-#   rbind(filter(df, t > max(t) - test_time & !(s %in% test_station)))
-
-test <- filter(df, t > max(t) - test_time & !(s %in% test_station))
-
+test <- filter(df, s %in% test_station) |>
+  rbind(filter(df, t > max(t) - test_time & !(s %in% test_station)))
 # -----------------------------------------------------------------------------
 m <- 3
 
@@ -239,6 +236,7 @@ test_summary |>
   geom_line(aes(y = pred), col = "blue") +
   facet_wrap(~s, scales = "free_y")
 
+# For forecast only
 temp <- test_summary |>
   mutate(type = "test") |>
   bind_rows(fit_summary) |>
@@ -257,3 +255,4 @@ for (i in 1:req_pages) {
   print(p)
 }
 
+# For forecast only
