@@ -57,11 +57,12 @@ cond_mvn_par <- function(mu0, x, mu, sigma, l, tau, coords, cov_function) {
 #' add coords <- cbind(coords_new, coords_obs) in general pred function
 pred_space <- function(X_pred, coords_pred, time_pred, y_obs, mu_obs, 
                        coords_obs, beta, rho, sigma, l, tau, cov_function) {
+  T <- dim(y_obs)[1]
+  n <- dim(y_obs)[2]
   pred_site_index <- which(coords_pred[1] == coords_obs[,1] & 
                              coords_pred[2] == coords_obs[,2])
   
   if (length(pred_site_index) == 0) {
-    T <- dim(y_obs)[1]
     max_t_krig <- min(T, time_pred) # Max time for kriging
     coords <- rbind(coords_pred, coords_obs, deparse.level = 0)
     
@@ -79,35 +80,31 @@ pred_space <- function(X_pred, coords_pred, time_pred, y_obs, mu_obs,
         y_pred_tm1 <- pred
       }
       if (max_t_krig > T) {
-        for (t in 1:(max_t_krig - time_pred)) {
-          # Forecast only but if that's the case we need all X(T + 1)
-          y_obs_fore <- pred_time(coords)
-          pars_t <- cond_mvn_par(
-            X_pred[T + t,] %*% beta + rho * (y_pred_tm1 - X_new[T + t - 1,] %*% beta),
-            y_obs_fore, 
-            mu_obs[t,], # what is mu_obs for T + 1?
-            sigma, l, tau, coords, cov_function)
-          pred <- pars_t$mu
-          y_new_tm1 <- pred
+        for (t in (T + 1):time_pred) {
+          D <- as.matrix(dist(coords_obs))
+          L <- chol(sigma^2 * exp(-D / l))
+          w <- rnorm(n) %*% L
+          w_pred <- cond_mvn_par(0, w, rep(0, n), sigma, l, tau, coords, 
+                                 cov_function)
+          pred <- X_pred[t,] %*% beta + 
+            rho * (y_pred_tm1 - X_pred[t - 1,] %*% beta) + w_pred
+          y_pred_tm1 <- pred
         }
       }
     }
   } else {
-    # Forecast only but if that's the case we need all X(T + 1)
-    pred <- pred_time()
-    pred <- pred[pred_site_index]
+    y_pred_tm1 <- y_obs[T, pred_site_index]
+    for (t in (T + 1):time_pred) {
+      D <- as.matrix(dist(coords_obs))
+      L <- chol(sigma^2 * exp(-D / l))
+      w <- rnorm(n) %*% L
+      pred <- X_pred[t,] %*% beta + 
+        rho * (y_pred_tm1 - X_pred[t - 1,] %*% beta) + w[pred_site_index]
+      y_pred_tm1 <- pred 
+    }
   }
   
   return(pred)
-}
-
-#' Predict in time
-#'
-forecast_obs <- function(X_pred, coords, time_pred, y_obs, mu_obs, 
-                      coords_obs, beta, rho, sigma, l, tau, cov_function) {
-  D <- as.matrix(dist(coords[2:n,]))
-  sigma^2 * exp(-D / l)
-  rnorm()
 }
 
 #' Predict
@@ -120,7 +117,7 @@ pred_st <- function(X_pred, coords_pred, time_pred, y_obs, mu_obs, coords_obs,
       parallel::mclapply(1:length(sigma), function(i) pred_space(
         X_pred[[j]], coords_pred[j,], time_pred[j], y_obs, mu_obs, coords_obs, 
         as.vector(beta[i,]), rho[i], sigma[i], l[i], tau[i], cov_function), 
-        mc.cores = 20)
+        mc.cores = 12)
     )
   })
   return(preds)

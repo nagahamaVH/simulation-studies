@@ -3,6 +3,7 @@ library(tidyr)
 library(cmdstanr)
 library(bayesplot)
 library(ggplot2)
+library(ggforce)
 
 source("./R/nearest_neighbor_functions.R")
 source("./R/nngp_ar1obs_pred.R")
@@ -52,11 +53,9 @@ for (t in 2:TT) {
   mu_t <- X_t[[t]] %*% beta + rho * (y_t[t - 1,] - X_t[[t - 1]] %*% beta)
   y_t[t,] <- mvtnorm::rmvnorm(1, mu_t, Sigma)
 }
-
-test_station <- sample(1:S, 10)
-hist(y_t)
-
 df$y <- as.vector(y_t)
+
+hist(y_t)
 
 ggplot(df, aes(x = t, y = y)) +
   geom_point()
@@ -80,8 +79,14 @@ ggplot(filter(df, s %in% sampled_stations), aes(x = t, y = y)) +
   facet_wrap(~s, scales = "free")
 
 # Out Of Sample validation
-train <- filter(df, !(s %in% test_station))
-test <- filter(df, s %in% test_station)
+test_station <- sample(1:S, 10)
+test_time <- 3
+
+train <- filter(df, !(s %in% test_station) & (t <= max(t) - test_time))
+# test <- filter(df, s %in% test_station) |>
+#   rbind(filter(df, t > max(t) - test_time & !(s %in% test_station)))
+
+test <- filter(df, t > max(t) - test_time & !(s %in% test_station))
 
 # -----------------------------------------------------------------------------
 m <- 3
@@ -187,13 +192,11 @@ coords_pred <- as.matrix(test[, c("c1", "c2")])
 nn_pred <- find_nn_pred(coords_pred, coords_train, m)
 
 X_pred <- list()
-counter <- 1
-for (i in unique(test$s)) {
-  temp_s <- test[test$s == i,]
-  for (j in unique(temp_s$t)) {
-    X_pred[[counter]] <- model.matrix(~x, temp_s[temp_s$t <= j,])
-    counter <- counter + 1 
-  }
+pointer <- 1
+for (i in 1:dim(test)[1]) {
+  X_pred[[pointer]] <- model.matrix(
+    ~x, df[df$s == test$s[i] & df$t <= test$t[i],])
+  pointer <- pointer + 1
 }
 
 time_pred <- test$t
@@ -228,3 +231,29 @@ test_summary |>
   geom_point() +
   geom_line(aes(y = pred), col = "blue") +
   facet_wrap(~s, scales = "free_y")
+
+test_summary |>
+  ggplot(mapping = aes(x = t, y = y)) +
+  geom_ribbon(aes(ymin = lb, ymax = ub), fill = "blue", alpha = .1) +
+  geom_point() +
+  geom_line(aes(y = pred), col = "blue") +
+  facet_wrap(~s, scales = "free_y")
+
+temp <- test_summary |>
+  mutate(type = "test") |>
+  bind_rows(fit_summary) |>
+  mutate(type = ifelse(is.na(type), "train", type))
+
+n_col <- 3
+n_row <- 4
+req_pages <- ceiling(n_distinct(temp$s) / (n_col * n_row))
+for (i in 1:req_pages) {
+  p <- ggplot(temp, mapping = aes(x = t, y = y)) +
+    geom_ribbon(aes(ymin = lb, ymax = ub, fill = type), alpha = .2) +
+    geom_point() +
+    geom_line(aes(y = pred, col = type)) +
+    facet_wrap_paginate(~s, ncol = n_col, nrow = n_row, page = i, 
+                        scales = "free_y")
+  print(p)
+}
+
