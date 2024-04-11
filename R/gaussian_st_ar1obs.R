@@ -203,6 +203,8 @@ mu_obs <- matrix(fit_summary$pred, nrow = max(fit_summary$t))
 pp_pred <- pred_st(X_pred, coords_pred, time_pred, y_obs, mu_obs, 
            coords_train, post_beta, post_rho, post_sigma, post_l, 
            post_tau, "exp")
+pp_pred <- simplify2array(pp_pred)
+
 pp_pred_summary <- apply(pp_pred, 2, function(x) 
   c(mean(x), quantile(x, probs = c(0.1, 0.9))))
 
@@ -222,16 +224,16 @@ ggplot(test_summary, aes(x = pred, y = y)) +
   geom_abline(slope = 1, col = "red")
 
 # Fitted TS
-test_summary |>
+filter(test_summary, s %in% test_station) |>
   ggplot(mapping = aes(x = t, y = y)) +
   geom_ribbon(aes(ymin = lb, ymax = ub), fill = "blue", alpha = .1) +
   geom_point() +
   geom_line(aes(y = pred), col = "blue") +
   facet_wrap(~s, scales = "free_y")
 
-# Forecast only: visualizing fitted and forecasted TS
+# Forecast only: visualising fitted and forecasted TS
 temp <- test_summary |>
-  mutate(type = "test") |>
+  filter(!(s %in% test_station)) |>
   bind_rows(fit_summary) |>
   mutate(type = ifelse(is.na(type), "train", type))
 

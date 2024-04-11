@@ -116,15 +116,12 @@ pred_space <- function(X_pred, coords_pred, time_pred, y_obs, mu_obs,
 pred_st <- function(X_pred, coords_pred, time_pred, y_obs, mu_obs, coords_obs, 
                     beta, beta_s, rho, sigma, l, tau, cov_function) {
   # For each site
-  preds <- sapply(1:dim(coords_pred)[1], function(j) {
-    unlist(
-      # For each posterior sampling
-      parallel::mclapply(1:length(sigma), function(i) pred_space(
-        X_pred[[j]], coords_pred[j,], time_pred[j], y_obs, mu_obs, coords_obs, 
-        as.vector(beta[i,]), as.vector(beta_s[i,]), rho[i], sigma[i], l[i], 
-        tau[i], cov_function), 
-        mc.cores = 12)
-    )
-  })
+  preds <- parallel::mclapply(1:dim(coords_pred)[1], function(j) {
+    sapply(1:length(sigma), function(i) pred_space(
+      X_pred[[j]], coords_pred[j,], time_pred[j], y_obs, mu_obs, coords_obs,
+      as.vector(beta[i,]), as.vector(beta_s[i,]), rho[i], sigma[i], l[i],
+      tau[i], cov_function))
+  }, mc.cores = 12)
+  
   return(preds)
 }

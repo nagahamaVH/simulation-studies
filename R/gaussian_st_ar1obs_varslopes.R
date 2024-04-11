@@ -8,6 +8,8 @@ library(ggforce)
 source("./R/nearest_neighbor_functions.R")
 source("./R/nngp_ar1obs_varslopes_pred.R")
 
+model_board <- pins::board_folder("models", versioned = T)
+
 set.seed(1521)
 
 # simulate data
@@ -82,11 +84,11 @@ test_station <- sample(1:S, 10)
 test_time <- 3
 
 train <- filter(df, !(s %in% test_station) & (t <= (max(t) - test_time)))
-# test <- filter(df, s %in% test_station) |>
-#   rbind(filter(df, t > max(t) - test_time & !(s %in% test_station)))
+test <- filter(df, s %in% test_station) |>
+  rbind(filter(df, t > max(t) - test_time & !(s %in% test_station)))
 
 # test <- filter(df, (t > (max(t) - test_time)) & !(s %in% test_station))
-test <- filter(df, s %in% test_station)
+# test <- filter(df, s %in% test_station)
 # -----------------------------------------------------------------------------
 m <- 3
 
@@ -121,6 +123,7 @@ n_chain <- 4
 n_iter <- 500
 seed <- 295
 
+pins::pin_read(model_board, "st_ar1obs_varslopes")
 fit <- model$sample(
   data = data,
   chains = n_chain,
@@ -131,6 +134,11 @@ fit <- model$sample(
   refresh = round(n_iter / 10),
   seed = seed
 )
+
+# pins::pin_write(
+#   model_board, fit, 
+#   name = "st_ar1obs_varslopes", 
+#   type = "rds")
 
 # Convergence diagnostics
 np <- nuts_params(fit)
@@ -208,9 +216,18 @@ time_pred <- test$t
 y_obs <- matrix(train$y, nrow = max(train$t)) # dim = S x TT
 mu_obs <- matrix(fit_summary$pred, nrow = max(fit_summary$t))
 
+pins::pin_read(model_board, "st_ar1obs_varslopes_predictions")
+
 pp_pred <- pred_st(X_pred, coords_pred, time_pred, y_obs, mu_obs, coords_train, 
                    post_beta, post_beta_s, post_rho, post_sigma, post_l, 
                    post_tau, "exp")
+pp_pred <- simplify2array(pp_pred)
+
+# pins::pin_write(
+#   model_board, pp_pred, 
+#   name = "st_ar1obs_varslopes_predictions", 
+#   type = "rds")
+
 pp_pred_summary <- apply(pp_pred, 2, function(x) 
   c(mean(x), quantile(x, probs = c(0.1, 0.9))))
 
@@ -230,7 +247,7 @@ ggplot(test_summary, aes(x = pred, y = y)) +
   geom_abline(slope = 1, col = "red")
 
 # Fitted TS
-test_summary |>
+filter(test_summary, s %in% test_station) |>
   ggplot(mapping = aes(x = t, y = y)) +
   geom_ribbon(aes(ymin = lb, ymax = ub), fill = "blue", alpha = .1) +
   geom_point() +
@@ -239,6 +256,7 @@ test_summary |>
 
 # Forecast only: visualising fitted and forecasted TS
 temp <- test_summary |>
+  filter(!(s %in% test_station)) |>
   mutate(type = "test") |>
   bind_rows(fit_summary) |>
   mutate(type = ifelse(is.na(type), "train", type))
