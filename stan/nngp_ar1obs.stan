@@ -56,9 +56,9 @@ generated quantities {
 
     cov = gp_exponential_cov(coords, coords, sigma, l);
     cov = add_diag(cov, tau^2);
-    y_sim_t[1] = multi_normal_cholesky_rng(mu[1], 
-      cholesky_decompose(cov / (1 - rho^2)));
-    for (t in 2:T) {
+    // y_sim_t[1] = multi_normal_cholesky_rng(mu[1], 
+    //   cholesky_decompose(cov / (1 - rho^2)));
+    for (t in 1:T) {
       y_sim_t[t] = multi_normal_cholesky_rng(mu[t], cholesky_decompose(cov));
     }
     
