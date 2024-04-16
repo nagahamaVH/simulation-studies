@@ -18,7 +18,7 @@ sigma <- 2
 l <- 0.3
 
 # Temporal
-rho <- 0.6
+rho <- 0.9
 sigma_e <- 0.1
 
 beta <- c(-1, 6)
@@ -32,6 +32,7 @@ d <- dist(coords) |>
   as.matrix()
 C <- sigma^2 * exp(-d / l)
 
+hist(d[lower.tri(d)])
 plot(d[lower.tri(C)], C[lower.tri(C)])
 
 Sigma <- C + diag(sigma_e^2, nrow = S)
@@ -148,7 +149,7 @@ fit$draws(variables = c("tau", "sigma", "l", "rho", "beta")) |>
 
 # Posterior predictive checking
 pp <- fit$draws(variables = "y_sim", format = "matrix") |>
-  apply(MARGIN = 2, function(x) c(mean(x), quantile(x, probs = c(0.1, 0.9))))
+  apply(MARGIN = 2, function(x) c(mean(x), quantile(x, probs = c(0.025, 0.975))))
 
 # Fitted, residuals
 fit_summary <- train |>
@@ -163,8 +164,11 @@ fit_summary <- train |>
 # Fitted vs observed
 ggplot(fit_summary, aes(x = pred, y = y)) +
   geom_point() +
-  geom_ribbon(aes(ymin = lb, ymax = ub), fill = "blue", alpha = .1) +
+  geom_ribbon(aes(ymin = lb, ymax = ub), fill = "blue", alpha = .2) +
   geom_abline(slope = 1, col = "red")
+
+ggplot(fit_summary, aes(x = t, y = resid)) +
+  geom_point()
 
 # Fitted TS
 set.seed(5230)
@@ -172,7 +176,7 @@ sampled_station <- sample(unique(fit_summary$s), 30)
 fit_summary |>
   filter(s %in% sampled_station) |>
   ggplot(mapping = aes(x = t, y = y)) +
-  geom_ribbon(aes(ymin = lb, ymax = ub), fill = "blue", alpha = .1) +
+  geom_ribbon(aes(ymin = lb, ymax = ub), fill = "blue", alpha = .2) +
   geom_point() +
   geom_line(aes(y = pred), col = "blue") +
   facet_wrap(~s, scales = "free_y")
@@ -184,6 +188,11 @@ post_l <- fit$draws(variables = "l", format = "matrix")
 post_tau <- fit$draws(variables = "tau", format = "matrix")
 post_beta <- fit$draws(variables = "beta", format = "matrix")
 post_rho <- fit$draws(variables = "rho", format = "matrix")
+
+# test_BK <- test
+# test <- test_BK[1:40,]
+# test <- test_BK[450:470,]
+# test <- test_BK
 
 coords_pred <- as.matrix(test[, c("c1", "c2")])
 nn_pred <- find_nn_pred(coords_pred, coords_train, m)
@@ -200,13 +209,20 @@ time_pred <- test$t
 y_obs <- matrix(train$y, nrow = max(train$t)) # dim = S x TT
 mu_obs <- matrix(fit_summary$pred, nrow = max(fit_summary$t))
 
+# j = 30
+# i = 1
+# pred_space(
+#   X_pred[[j]], coords_pred[j,], time_pred[j], y_obs, mu_obs, coords_train,
+#   as.vector(post_beta[i,]), post_rho[i], post_sigma[i], post_l[i],
+#   post_tau[i], "exp")
+
 pp_pred <- pred_st(X_pred, coords_pred, time_pred, y_obs, mu_obs, 
-           coords_train, post_beta, post_rho, post_sigma, post_l, 
-           post_tau, "exp")
+                   coords_train, post_beta, post_rho, post_sigma, post_l, 
+                   post_tau, "exp")
 pp_pred <- simplify2array(pp_pred)
 
 pp_pred_summary <- apply(pp_pred, 2, function(x) 
-  c(mean(x), quantile(x, probs = c(0.1, 0.9))))
+  c(mean(x), quantile(x, probs = c(0.025, 0.975))))
 
 test_summary <- test |>
   mutate(
@@ -220,13 +236,13 @@ test_summary <- test |>
 # Fitted vs observed
 ggplot(test_summary, aes(x = pred, y = y)) +
   geom_point() +
-  geom_ribbon(aes(ymin = lb, ymax = ub), fill = "blue", alpha = .1) +
+  geom_ribbon(aes(ymin = lb, ymax = ub), fill = "blue", alpha = .2) +
   geom_abline(slope = 1, col = "red")
 
 # Fitted TS
 filter(test_summary, s %in% test_station) |>
   ggplot(mapping = aes(x = t, y = y)) +
-  geom_ribbon(aes(ymin = lb, ymax = ub), fill = "blue", alpha = .1) +
+  geom_ribbon(aes(ymin = lb, ymax = ub), fill = "blue", alpha = .2) +
   geom_point() +
   geom_line(aes(y = pred), col = "blue") +
   facet_wrap(~s, scales = "free_y")
@@ -234,6 +250,7 @@ filter(test_summary, s %in% test_station) |>
 # Forecast only: visualising fitted and forecasted TS
 temp <- test_summary |>
   filter(!(s %in% test_station)) |>
+  mutate(type = "test") |>
   bind_rows(fit_summary) |>
   mutate(type = ifelse(is.na(type), "train", type))
 
