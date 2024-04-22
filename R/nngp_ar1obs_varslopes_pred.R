@@ -9,7 +9,7 @@ cov_matrix <- function(coords1, sigma, l, cov_function, coords2 = NULL) {
   } else {
     p <- dim(coords1)[2]
     coords2 <- if (is.vector(coords2)) matrix(coords2, ncol = p)
-    D <- rowSums(sweep(coords1, 2, coords2)^p)^(1 / p)
+    D <- sqrt(rowSums(sweep(coords1, 2, coords2)^2))
   }
   
   if (cov_function == "exp") {

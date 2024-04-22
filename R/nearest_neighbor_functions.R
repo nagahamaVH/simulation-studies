@@ -63,18 +63,28 @@ find_nn <- function(coords, m) {
 
 # Merge with find_nn adding optional arg (coords_pred)
 find_nn_pred <- function(coords_pred, coords_obs, m) {
-  nn_list <- FNN::get.knnx(coords_obs, coords_pred, k = m)
-  NN_distM <- sapply(1:nrow(coords_pred), function(i) {
-    coords_obs[nn_list$nn.index[i,],] |>
-      dist(method = "minkowski")
-  }) |>
-    t()
+  out <- list()
+  out$NN_ind <- matrix(nrow = dim(coords_pred)[1], ncol = m)
+  out$NN_distM <- matrix(nrow = dim(coords_pred)[1], ncol = (m * (m - 1) / 2))
+  out$NN_dist <- matrix(nrow = dim(coords_pred)[1], ncol = m)
   
-  out <- list(
-    coords.ord = coords_pred,
-    NN_ind = nn_list$nn.index, 
-    NN_distM = NN_distM, 
-    NN_dist = nn_list$nn.dist
-  )
+  for (i in 1:dim(coords_pred)[1]) {
+    obs_site_id <- which(apply(coords_obs, MARGIN = 1, 
+                               FUN = function(x) all(x == coords_pred[i,])))
+    m_i <- ifelse(length(obs_site_id) > 0, m + 1, m)
+    
+    nn_list <- FNN::get.knnx(
+      coords_obs, matrix(coords_pred[i,], ncol = dim(coords_pred)[2]), k = m_i)
+    
+    if (length(obs_site_id) > 0) {
+      nn_list$nn.index <- nn_list$nn.index[-1]
+      nn_list$nn.dist <- nn_list$nn.dist[-1]
+    }
+    
+    out$NN_ind[i,] <- nn_list$nn.index
+    out$NN_dist[i,] <- nn_list$nn.dist
+    out$NN_distM[i,] <- dist(coords_obs[nn_list$nn.index,], method = "minkowski")
+  }
+  
   return(out)
 }
